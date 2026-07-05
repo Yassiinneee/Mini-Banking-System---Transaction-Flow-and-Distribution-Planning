@@ -1,0 +1,232 @@
+# Concurrency Control and Distributed Database Design
+
+## Banking System Checkpoint
+
+---
+
+# Part 1 – Transaction Management
+
+## Scenario
+
+A banking application allows customers to:
+
+* Transfer money between accounts.
+* View account balances.
+
+Two users simultaneously initiate money transfers involving the same bank account.
+
+---
+
+## 1. Concurrency Issue
+
+The most likely concurrency problem is the **Lost Update**.
+
+### Explanation
+
+Assume Account A contains **$1,000**.
+
+* **Transaction T1** transfers **$200** from Account A.
+* **Transaction T2** transfers **$300** from the same account at the same time.
+
+If both transactions read the balance before either one writes the updated value, one transaction may overwrite the other's changes.
+
+Example:
+
+| Transaction | Operation    | Balance |
+| ----------- | ------------ | ------- |
+| T1          | Read balance | $1,000  |
+| T2          | Read balance | $1,000  |
+| T1          | Write $800   | $800    |
+| T2          | Write $700   | $700    |
+
+The correct balance should be **$500**, but because one update overwrote the other, the final balance becomes **$700**.
+
+This is known as a **Lost Update**.
+
+---
+
+## 2. Locking Mechanism
+
+A simple **Shared (S) / Exclusive (X) Locking** strategy can prevent this issue.
+
+### Shared Lock (S)
+
+Used for read operations.
+
+* Multiple users can read the same account simultaneously.
+* No updates are allowed while a shared lock exists.
+
+### Exclusive Lock (X)
+
+Used for update operations such as transfers.
+
+* Only one transaction can modify an account at a time.
+* Other transactions must wait until the lock is released.
+
+### Transfer Process
+
+1. Transaction requests an **Exclusive Lock** on the source account.
+2. Balance is read.
+3. Balance is updated.
+4. Changes are committed.
+5. Lock is released.
+
+This guarantees that no two transfers modify the same account simultaneously.
+
+---
+
+## 3. Locking Strategy
+
+### Preferred Strategy: **Pessimistic Locking**
+
+### Reason
+
+Banking systems manage highly sensitive financial data where consistency is critical.
+
+Pessimistic locking assumes that conflicts are likely to occur and prevents them before they happen by locking the affected records.
+
+### Advantages
+
+* Prevents lost updates.
+* Maintains data consistency.
+* Guarantees correct account balances.
+* Commonly used in financial applications.
+
+Optimistic locking is better suited for systems with infrequent conflicts, but banking transactions often involve simultaneous updates to the same accounts.
+
+---
+
+## 4. Concurrent Transaction Schedule
+
+### Example
+
+| Step | Transaction T1                      | Transaction T2               |
+| ---- | ----------------------------------- | ---------------------------- |
+| 1    | Acquire Exclusive Lock on Account A | Waiting                      |
+| 2    | Read Balance ($1000)                | Waiting                      |
+| 3    | Deduct $200 → Balance = $800        | Waiting                      |
+| 4    | Write Balance                       | Waiting                      |
+| 5    | Commit                              | Waiting                      |
+| 6    | Release Lock                        | Acquire Exclusive Lock       |
+| 7    |                                     | Read Balance ($800)          |
+| 8    |                                     | Deduct $300 → Balance = $500 |
+| 9    |                                     | Write Balance                |
+| 10   |                                     | Commit                       |
+| 11   |                                     | Release Lock                 |
+
+### Is the Schedule Safe?
+
+**Yes.**
+
+Because Transaction T2 waits until Transaction T1 finishes, the schedule is **serializable**, preserving consistency and preventing lost updates.
+
+---
+
+# Part 2 – Distributed Database Planning
+
+## Banking Branches
+
+The bank operates in three cities:
+
+* Tunis
+* Sousse
+* Sfax
+
+---
+
+## 1. Horizontal Fragmentation
+
+The **Customers** table can be horizontally fragmented based on the customer's home branch.
+
+### Fragmentation Strategy
+
+| Fragment         | Condition         |
+| ---------------- | ----------------- |
+| Customers_Tunis  | branch = 'Tunis'  |
+| Customers_Sousse | branch = 'Sousse' |
+| Customers_Sfax   | branch = 'Sfax'   |
+
+Each branch stores only its local customers.
+
+### Benefits
+
+* Faster local queries.
+* Reduced network traffic.
+* Better scalability.
+* Easier branch-level management.
+
+---
+
+## 2. Vertical Fragmentation
+
+Sensitive authentication information should be separated from general customer information.
+
+### Customers Table
+
+| CustomerID | Name | Address | Phone | Branch |
+| ---------- | ---- | ------- | ----- | ------ |
+
+### Customer_Login Table
+
+| CustomerID | Email | Username | PasswordHash |
+| ---------- | ----- | -------- | ------------ |
+
+### Benefits
+
+* Improved security.
+* Better access control.
+* Sensitive credentials can receive stronger protection.
+* Reduced exposure of authentication data.
+
+---
+
+## 3. Data Replication Strategy
+
+| Data                 | Replicate?               | Reason                                                                                                                                                                                 |
+| -------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Customer Information | Yes                      | Customers may visit any branch and should be recognized everywhere.                                                                                                                    |
+| Account Balances     | Yes                      | Every branch must display the latest account balance for withdrawals, deposits, and transfers.                                                                                         |
+| Transaction History  | No (Partial Replication) | Transaction history grows rapidly. Keeping a complete copy at every branch increases storage requirements and synchronization costs. Only recent or required records should be shared. |
+
+### Recommendation
+
+Replicate:
+
+* Customer profiles
+* Account balances
+
+Do not fully replicate:
+
+* Complete transaction history
+
+This approach balances availability, storage efficiency, and synchronization performance.
+
+---
+
+## 4. Allocation Strategy for Transaction History
+
+### Recommended: Dynamic Allocation
+
+### Reason
+
+Transaction history grows continuously and customer activity changes over time.
+
+Dynamic allocation allows the database to:
+
+* Move data automatically as usage changes.
+* Improve load balancing.
+* Reduce storage bottlenecks.
+* Increase query performance.
+* Adapt to changing transaction volumes.
+
+Static allocation would require manual redistribution and is less flexible for an active banking system.
+
+---
+
+# Conclusion
+
+A reliable banking database must ensure both **transaction consistency** and **efficient distributed data management**.
+
+For concurrency control, **Exclusive Locks** combined with **Pessimistic Locking** prevent lost updates and guarantee correct account balances during simultaneous transfers.
+
+For distributed databases, **horizontal fragmentation** by branch improves performance, **vertical fragmentation** secures sensitive login information, and selective **data replication** ensures customer and account information remain available across all branches while minimizing storage costs. Finally, **dynamic allocation** provides the flexibility needed to efficiently manage continuously growing transaction histories.
